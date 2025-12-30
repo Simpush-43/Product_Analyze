@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="app/assets/diagram-export-12-30-2025-11_35_35-AM.png"
+       alt="Store Analysis System Flow"
+       width="800">
+</p>
+
 # Shopify App Template - React Router
 
 This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/).  It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
