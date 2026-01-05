@@ -103,7 +103,7 @@ async function scrapeStore(store) {
     const $ = cheerio.load(html);
 
     const items = $(
-      ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections, .ProductItem, .collection, li.wizzy-result-product, .wizzy-search-results, .product-list__inner, .product-container",
+      ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections,.ProductItem,.collection,li.wizzy-result-product,.wizzy-search-results,.product-list__inner ,.product-container,li.productgrid--item,li.grid__item,.product-list,.boost-sd__product-list,#gf-products,li.grid__item",
     );
 
     if (!items.length) break;
@@ -128,11 +128,17 @@ async function scrapeStore(store) {
         ".collection-item__title",
         ".product-block__title",
         ".grid-view-item__title",
-        ".ProductItem__Title",
+        ".ProductItem __Title",
         ".product-card__title",
         ".pro_title_cust",
         ".product-item-title",
         ".grid-product__type",
+        ".productitem--title",
+        ".card__heading",
+        ".product-item__info-inner",
+        ".boost-sd__product-title",
+        ".t4s-product-title",
+        ".card__heading",
         "h2",
         "h3",
       ].some((sel) => {
@@ -180,12 +186,26 @@ async function scrapeStore(store) {
         $(el).find(".ProductItem__Image").attr("src") ||
         $(el).find(".ProductItem__Image").attr("data-src") ||
         $(el).find(".ProductItem__Image").attr("data-srcset") ||
+        $(el).find(".productitem--image img").attr("src") ||
+        $(el).find(".productitem--image img").attr("data-src") ||
+        $(el).find(".productitem--image img").attr("data-srcset") ||
         $(el).find(".product-card__image").attr("src") ||
         $(el).find(".product-card__image").attr("data-src") ||
         $(el).find(".product-card__image").attr("data-srcset") ||
+        $(el).find(".product-item__primary-image").attr("data-srcset") ||
+        $(el).find(".product-item__primary-image").attr("srcset") ||
         $(el).find("img").attr("src") ||
         $(el).find("img").attr("data-src") ||
         $(el).find("img").attr("data-srcset") ||
+        $(el).find(".boost-sd__product-image img").attr("src") ||
+        $(el).find(".boost-sd__product-image img").attr("data-src") ||
+        $(el).find(".boost-sd__product-image img").attr("data-srcset") ||
+        $(el).find(".t4s-product-img img").attr("src") ||
+        $(el).find(".t4s-product-img img").attr("data-src") ||
+        $(el).find(".t4s-product-img img").attr("data-srcset") ||
+        $(el).find(".media img").attr("src") ||
+        $(el).find(".media img").attr("data-src") ||
+        $(el).find(".media img").attr("data-srcset") ||
         "";
 
       if (image?.startsWith("//")) image = "https:" + image;
@@ -200,15 +220,25 @@ async function scrapeStore(store) {
       let price = "";
       [
         ".price",
+        ".collection-price",
         ".product-price",
-        ".price-item",
-        ".price__regular",
-        ".price__sale",
-        ".money",
+        ".rte",
+        ".product-block__price",
         ".ProductItem__Price",
+        ".ProductItem__PriceList",
+        ".f-price-item",
+        ".grid-product__price--original",
+        ".grid-product__price a",
         ".product-price__item",
-        ".grid-product__price",
+        ".price-item",
+        ".wizzy-product-item-price",
+        ".price price--highlight",
+        ".cvc-money",
         ".fs-price",
+        ".money",
+        ".price-item",
+        ".price price--highlight",
+        ".boost-sd__format-currency",
       ].some((sel) => {
         const p = cleanTxt($(el).find(sel).first().text());
         if (p && !isGarbage(p)) {

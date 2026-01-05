@@ -2,51 +2,91 @@ import { useEffect, useState } from "react";
 import { useLoaderData, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import prisma from "../db.server";
-export const loader = async ({ request, params }) => {
+// for graphql 
+async function fetchSingleProductGraphQL(shop, accessToken, shopifyId) {
+  const pureId = shopifyId.replace("shopify-", "");
+
+  const query = `
+    {
+      product(id: "gid://shopify/Product/${pureId}") {
+        title
+        descriptionHtml
+        images(first: 1) {
+          edges {
+            node {
+              url
+            }
+          }
+        }
+        variants(first: 1) {
+          edges {
+            node {
+              price
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const res = await fetch(
+    `https://${shop}/admin/api/2024-01/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query }),
+    }
+  );
+
+  const text = await res.text();
+
+  if (!res.ok || text.startsWith("<")) {
+    console.error("Shopify GraphQL HTML response:", text.slice(0, 200));
+    return null;
+  }
+
+  const json = JSON.parse(text);
+  const p = json.data?.product;
+  if (!p) return null;
+
+  return {
+    title: p.title,
+    description: p.descriptionHtml || "",
+    price: p.variants.edges[0]?.node.price || "N/A",
+    image:
+      p.images.edges[0]?.node.url ||
+      "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
+    source: "shopify",
+  };
+}
+
+export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const type = url.searchParams.get("type");
-  if (!type) {
-    const productId = Number(params.productId);
-    if (isNaN(productId)) {
-      throw new Response("Misiing Product id", { status: 400 });
-    }
-    const product = await prisma.Product.findUnique({
-      where: { id: productId },
-    });
-    if (!product)
-      throw new Response("Not found", {
-        status: 404,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    return { userProduct: product, source: "manual" };
-  }
-  if (type === "shopify") {
-    const shopifyId = url.searchParams.get("shopifyId");
-    const res = await fetch(`https://${session.shop}/products.json`, {
-      headers: {
-        "X-Shopify-Access-Token": session.accessToken,
-      },
-    });
-    const data = await res.json();
-    const sp = data.products.find((p) => `shopify-${p.id}` === shopifyId);
-    if (!sp) {
-      throw new Response("Shopify product not found", { status: 404 });
-    }
-    return {
-      userProduct: {
-        title: sp.title,
-        description: sp.body_html || "",
-      },
-      source: "shopify",
-    };
-  }
-  throw new Response("Invalid boost type", { status: 400 });
-};
 
+  const shopifyId = url.searchParams.get("shopifyId");
+  if (!shopifyId) {
+    throw new Response("Missing shopifyId", { status: 400 });
+  }
+
+  const product = await fetchSingleProductGraphQL(
+    session.shop,
+    session.accessToken,
+    shopifyId
+  );
+
+  if (!product) {
+    throw new Response("Shopify product not found", { status: 404 });
+  }
+
+  return {
+    userProduct: product,
+    source: "shopify",
+  };
+};
 export default function BoostProduct() {
   const navigate = useNavigate();
   const [boosted, setBoosted] = useState("");

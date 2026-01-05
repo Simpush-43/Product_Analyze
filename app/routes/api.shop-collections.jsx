@@ -83,6 +83,13 @@ export const loader = async ({ request }) => {
     /mailto:care@voltas.com/i,
     /about voltas/i,
     /tel:/i,
+    /privacy/i,
+    /ask the experts/i,
+    /shipping/i,
+    /private limited/i,
+    /account/i,
+    /our story/i,
+    /podcast /i,
   ];
   const isGarbage = (text) =>
     unwantedPatterns.some((p) => p.test(text)) || text.length < 2;
@@ -117,7 +124,7 @@ export const loader = async ({ request }) => {
 
         // 🔹 Detect items
         const items = $(
-          ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections, .ProductItem, .collection, li.wizzy-result-product, .wizzy-search-results, .grid-product__content, .product-grid .grid__item .list-collections__item-list, .collection-list .product-grid-container ul, #product-grid .grid__item.grid-product,.collection-list__container,li.collection__item , li.collection-list__item grid__item,.grid__cell ,.grid,.t4s-container,.box_cl_grid,.cat_grid_item",
+          ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections, .ProductItem, .collection, li.wizzy-result-product, .wizzy-search-results, .grid-product__content, .product-grid .grid__item .list-collections__item-list, .collection-list .product-grid-container ul, #product-grid .grid__item.grid-product,.collection-list__container,li.collection__item , li.collection-list__item grid__item,.grid__cell ,.grid,.t4s-container,.box_cl_grid,.cat_grid_item,li.grid__item,.container",
         );
 
         // 🔥 Fallback trigger (Fireboltt return 1-2 items only)
@@ -154,7 +161,8 @@ export const loader = async ({ request }) => {
             ".collection__item-title",
             ".card__heading",
             ".collection-block-item__title",
-            ".t4s-cat-title"
+            ".t4s-cat-title",
+            ".card__heading",
           ].some((sel) => {
             const t = cleanTxt($(el).find(sel).first().text());
             if (t && !isGarbage(t)) {
@@ -197,6 +205,10 @@ export const loader = async ({ request }) => {
             $(el).find(".collection-image svg").attr("data-src") ||
             $(el).find(".t4s_ratio img").attr("src") ||
             $(el).find(".t4s_ratio img").attr("srcset") ||
+            $(el).find(".media img").attr("src") ||
+            $(el).find(".media img").attr("data-src") ||
+            $(el).find(".media img").attr("data-srcset") ||
+            $(el).find("bg-svg").attr("xmlns") ||
             "";
 
           // Extract from background-image: url(...)

@@ -57,6 +57,12 @@ export const loader = async ({ request }) => {
     /policy/i,
     /terms/i,
     /privacy/i,
+    /ask the experts/i,
+    /shipping/i,
+    /private limited/i,
+    /account/i,
+    /our story/i,
+    /podcast /i,
   ];
   const isGarbage = (text) =>
     unwantedPatterns.some((p) => p.test(text)) || text.length < 2;
@@ -85,7 +91,7 @@ export const loader = async ({ request }) => {
 
       // 🕸️ Selectors (same as your original — UNTOUCHED)
       $(
-        ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections,.ProductItem,.collection,li.wizzy-result-product,.wizzy-search-results,.product-list__inner ,.product-container,li.productgrid--item,li.grid__item,.product-list,.boost-sd__product-list,#gf-products",
+        ".grid-product, .product-card, .product-item, .product-block, .collection-grid-item, .collection-card, .grid__item, .collection-item, .collection-block, .template-list-collections,.ProductItem,.collection,li.wizzy-result-product,.wizzy-search-results,.product-list__inner ,.product-container,li.productgrid--item,li.grid__item,.product-list,.boost-sd__product-list,#gf-products,li.grid__item,.row ",
       ).each((i, el) => {
         if (i > 80) return; // limit for performance
 
@@ -110,7 +116,8 @@ export const loader = async ({ request }) => {
           ".card__heading",
           ".product-item__info-inner",
           '.boost-sd__product-title',
-          ".t4s-product-title"
+          ".t4s-product-title",
+          ".card__heading",
         ].some((sel) => {
           const t = cleanTxt($(el).find(sel).first().text());
           if (t && !isGarbage(t)) {
@@ -169,6 +176,9 @@ let image =
   $(el).find(".t4s-product-img img").attr("src") ||
   $(el).find(".t4s-product-img img").attr("data-src") ||
   $(el).find(".t4s-product-img img").attr("data-srcset") ||
+    $(el).find(".media img").attr("src") ||
+  $(el).find(".media img").attr("data-src") ||
+  $(el).find(".media img").attr("data-srcset") ||
   "";
 
 // Helper for srcset

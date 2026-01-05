@@ -33,34 +33,34 @@ function ReadMoreText({ text, limit = 90 }) {
   );
 }
 // for shopify descirption
-function descManage(html=''){
-return html.replace(/<[^>]+>/g, "")
+function descManage(html = "") {
+  return html.replace(/<[^>]+>/g, "");
 }
-// AI boosteed 
-function IsAiBoosted(){
-  return(
+// AI boosteed
+function IsAiBoosted() {
+  return (
     <>
-    <div
-    style={{
-      position:'absolute',
-      top:'10px',
-      left:'10px',
-      background: 'linear-gradient(135deg,#7c3aed,#2563eb)',
-      color:'white',
-      fontSize:'12px',
-      fontWeight:600,
-      padding:'4px 8px',
-      borderRadius:'999px',
-      display:'flex',
-      alignItems:'center',
-      gap:'4px',
-       boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-    }}
-    >
-✨ AI Boosted
-    </div>
+      <div
+        style={{
+          position: "absolute",
+          top: "10px",
+          left: "10px",
+          background: "linear-gradient(135deg,#7c3aed,#2563eb)",
+          color: "white",
+          fontSize: "12px",
+          fontWeight: 600,
+          padding: "4px 8px",
+          borderRadius: "999px",
+          display: "flex",
+          alignItems: "center",
+          gap: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        }}
+      >
+        ✨ AI Boosted
+      </div>
     </>
-  )
+  );
 }
 export const loader = async ({ request }) => {
   // ✅ Shopify auth (this already knows the shop)
@@ -74,6 +74,61 @@ export const loader = async ({ request }) => {
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
   });
+  // graphql side bar
+  async function fetchProductsGraphQL(shop, accessToken) {
+    const query = `
+    {
+      products(first: 50) {
+        edges {
+          node {
+            id
+            title
+            descriptionHtml
+            images(first: 1) {
+              edges {
+                node {
+                  url
+                }
+              }
+            }
+            variants(first: 1) {
+              edges {
+                node {
+                  price
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+    const res = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query }),
+    });
+
+    const json = await res.json();
+
+    return (
+      json.data?.products?.edges.map(({ node }) => ({
+        id: `shopify-${node.id.split("/").pop()}`,
+        title: node.title,
+        description: node.descriptionHtml || "",
+        price: node.variants.edges[0]?.node.price || "N/A",
+        image:
+          node.images.edges[0]?.node.url ||
+          "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
+        source: "shopify",
+      })) || []
+    );
+  }
+
   // 🔹 Shopify products
   let shopifyProducts = [];
   try {
@@ -96,8 +151,13 @@ export const loader = async ({ request }) => {
           "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
         source: "shopify",
       })) || [];
+    // fallback
+    if (shopifyProducts.length === 0) {
+      shopifyProducts = await fetchProductsGraphQL(shop, session.accessToken);
+    }
   } catch (err) {
-    console.log("Shopify fetch failed", err);
+    console.log("REST failed → trying GraphQL", err);
+    shopifyProducts = await fetchProductsGraphQL(shop, session.accessToken);
   }
 
   return { shop, products, shopifyProducts };
@@ -178,23 +238,24 @@ export default function Profile() {
                 borderRadius="large"
                 style={{ transition: "transform .2s" }}
               >
-                <div style={{position:'relative'}}>
-                  {p.isBoosted && <IsAiBoosted/>}
+                <div style={{ position: "relative" }}>
+                  {p.isBoosted && <IsAiBoosted />}
                   <img
-                  src={p.image}
-                  alt={p.title}
-                  style={{
-                    width: "100%",
-                    height: "180px",
-                    objectFit: "cover",
-                    borderRadius: "8px",
-                    marginBottom: "0.8rem",
-                  }}
-                /></div>
-                <s-stack direction="vertical" gap='extraTight'>
+                    src={p.image}
+                    alt={p.title}
+                    style={{
+                      width: "100%",
+                      height: "180px",
+                      objectFit: "cover",
+                      borderRadius: "8px",
+                      marginBottom: "0.8rem",
+                    }}
+                  />
+                </div>
+                <s-stack direction="vertical" gap="extraTight">
                   <s-text varient="headingSm">Title:{p.title}</s-text>
                   <s-text tone="subdued">Price:₹ {p.price}</s-text>
-                  <ReadMoreText text={p.description}/>
+                  <ReadMoreText text={p.description} />
                 </s-stack>
               </s-card>
               <div
@@ -204,37 +265,86 @@ export default function Profile() {
           ))}
           {shopifyProducts.length > 0 && (
             <>
-              <s-text variant="headingMd" style={{ marginTop: "2rem" }}>
-                🛍 Shopify Store Products
-              </s-text>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit,minmax(220px,2fr))",
-                  gap: "1.2rem",
-                  marginTop: "1rem",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: "1.4rem",
                 }}
               >
                 {shopifyProducts.map((p) => (
-                  <s-card key={p.id} padding="loose">
-                    <img
-                      src={p.image}
-                      alt={p.title}
-                      style={{
-                        width: "100%",
-                        height: "180px",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                        marginBottom: "0.8rem",
-                      }}
-                    />
-                    <s-text variant="headingSm">
-                      Title:<strong>{p.title}</strong>
-                    </s-text>
-                    <ReadMoreText text={descManage(p.description)}/>
-                    <s-text tone="subdued">
-                      Price:<strong>₹ {p.price}</strong>
-                    </s-text>
+                  <s-card
+                    key={p.id}
+                    padding="none"
+                    borderRadius="large"
+                    shadow="base"
+                    style={{
+                      overflow: "hidden",
+                      transition: "transform .2s, box-shadow .2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.boxShadow =
+                        "0 12px 24px rgba(0,0,0,0.12)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow =
+                        "0 4px 10px rgba(0,0,0,0.06)";
+                    }}
+                  >
+                    {/* Image */}
+                    <div style={{ position: "relative" }}>
+                      <img
+                        src={p.image}
+                        alt={p.title}
+                        style={{
+                          width: "100%",
+                          height: "180px",
+                          objectFit: "cover",
+                        }}
+                      />
+
+                      {/* Shopify badge */}
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "10px",
+                          left: "10px",
+                          background: "#10b981",
+                          color: "white",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          padding: "4px 10px",
+                          borderRadius: "999px",
+                          boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+                        }}
+                      >
+                        🛍 Shopify
+                      </span>
+                    </div>
+
+                    {/* Content */}
+                    <div style={{ padding: "0.9rem" }}>
+                      <s-text variant="headingSm" truncate>
+                        {p.title}
+                      </s-text>
+
+                      <s-text
+                        tone="subdued"
+                        style={{
+                          marginTop: "4px",
+                          fontWeight: 600,
+                          color: "#111827",
+                        }}
+                      >
+                        ₹ {p.price}
+                      </s-text>
+
+                      <div style={{ marginTop: "6px" }}>
+                        <ReadMoreText text={descManage(p.description)} />
+                      </div>
+                    </div>
                   </s-card>
                 ))}
               </div>

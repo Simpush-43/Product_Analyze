@@ -49,3 +49,13 @@ model User {
   
   products  Product[]
 }
+model StoreRequest {
+  id          Int      @id @default(autoincrement())
+  storeName   String   @unique
+  reason      String?
+  count       Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  status      String   @default("pending") 
+  // pending | supported | rejected
+}

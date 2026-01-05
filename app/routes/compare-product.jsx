@@ -5,12 +5,81 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request, params }) => {
-  const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
+  const shopParam = url.searchParams.get("shop");
+
+  if (!shopParam) {
+    throw new Response("Missing shop context", { status: 400 });
+  }
+
+  const { session } = await authenticate.admin(request);
   const type = url.searchParams.get("type");
   const userId = url.searchParams.get("user");
   const shopifyId = url.searchParams.get("shopify");
   const scrapedTitle = url.searchParams.get("scraped");
+  // graphql
+async function fetchSingleProductGraphQL(shop, accessToken, shopifyId) {
+  const pureId = shopifyId.replace("shopify-", "");
+
+  const query = `
+    {
+      product(id: "gid://shopify/Product/${pureId}") {
+        title
+        descriptionHtml
+        images(first: 1) {
+          edges {
+            node {
+              url
+            }
+          }
+        }
+        variants(first: 1) {
+          edges {
+            node {
+              price
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const res = await fetch(
+    `https://${shop}/admin/api/2024-01/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query }),
+    }
+  );
+
+  const text = await res.text();
+
+  if (!res.ok || text.startsWith("<")) {
+    console.error("Shopify GraphQL HTML response:", text.slice(0, 200));
+    return null;
+  }
+
+  const json = JSON.parse(text);
+  const p = json.data?.product;
+
+  if (!p) return null;
+
+  return {
+    title: p.title,
+    description: p.descriptionHtml || "",
+    price: p.variants.edges[0]?.node.price || "N/A",
+    image:
+      p.images.edges[0]?.node.url ||
+      "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
+    source: "shopify-graphql",
+  };
+}
+
+
   if (!type || !scrapedTitle) {
     throw new Response("Missing comparison data", { status: 400 });
   }
@@ -27,26 +96,17 @@ export const loader = async ({ request, params }) => {
     userProduct = product;
     productId = product.id;
   }
+  // graphql
+
   // Shopify product
-  if (type === "shopify") {
-    const res = await fetch(`https://${session.shop}/products.json`, {
-      headers: {
-        "X-Shopify-Access-Token": session.accessToken,
-      },
-    });
-    const data = await res.json();
-    const sp = data.products.find((p) => `shopify-${p.id}` === shopifyId);
-    if (sp) {
-      userProduct = {
-        title: sp.title,
-        description: sp.body_html || "",
-        price: sp.variants?.[0].price || "N/A",
-      };
-    }
-  }
-  if (!userProduct) {
-    throw new Response("Product not found", { status: 404 });
-  }
+if (type === "shopify") {
+  userProduct = await fetchSingleProductGraphQL(
+    session.shop,
+    session.accessToken,
+    shopifyId
+  );
+}
+
   return {
     userProduct,
     scrapedProduct: { title: scrapedTitle },
@@ -69,9 +129,9 @@ export default function CompareProduct() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userProduct:{
+          userProduct: {
             ...userProduct,
-            isBoosted:userProduct.isBoosted || false,
+            isBoosted: userProduct.isBoosted || false,
           },
           scrapedProduct, // placeholder
         }),
@@ -141,10 +201,10 @@ export default function CompareProduct() {
                   >
                     <s-button
                       variant="primary"
-                      disabled={!productId}
+                      disabled={!productId && !shopifyId}
                       onClick={() => {
                         if (type === "manual") {
-                          navigate(`/boost-product/${productId}`);
+                          navigate(`/boost-productmanual?type=manual&productId=${productId}`);
                         } else {
                           navigate(
                             `/boost-product?type=shopify&shopifyId=${shopifyId}`,

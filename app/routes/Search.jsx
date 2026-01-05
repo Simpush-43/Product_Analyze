@@ -973,7 +973,7 @@ export default function SearchStore() {
                 label="Store A"
                 value={shopA}
                 onInput={(e) => setshopA(e.target.value)}
-                placeholder="e.g. nike"
+                placeholder="e.g. fireboltt"
               />
             </div>
 
@@ -982,7 +982,7 @@ export default function SearchStore() {
                 label="Store B"
                 value={shopB}
                 onInput={(e) => setshopB(e.target.value)}
-                placeholder="e.g. adidas"
+                placeholder="e.g. campushoes"
               />
             </div>
             <div style={{ marginTop: "10px" }}>

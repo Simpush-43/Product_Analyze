@@ -11,58 +11,113 @@ export const loader = async ({ request, params }) => {
   console.log("🧩 Frontend loader URL:", url.href);
   console.log("🧩 Extracted collectionUrl:", collectionUrl);
 
-  if (!collectionUrl) return { error: "Collection URL missing" };
-
-  const backendUrl = `${url.origin}/api/collection-products?collectionUrl=${encodeURIComponent(collectionUrl)}`;
-  const res = await fetch(backendUrl);
-  const data = await res.json();
-
-  if (!data.success) return { error: data.error };
-
-  const initialProducts =
-    data.products?.map((p, i) => ({
-      id: i,
-      title: p.title,
-      image: p.image,
-      price: p.price,
-      description: p.description,
-      link: p.link,
-      Rating: p.Rating,
-    })) || [];
-  // comparison products
-  const shop = session.shop;
-  const user = await getOrCreateUser(shop);
-
-  const Userproducts = await prisma.product.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
-  // 🔹 Shopify products
-  let shopifyProducts = [];
+  if (!collectionUrl)
+    return {
+      fallback: true,
+      reason: "missing_collection",
+    };
   try {
-    const res = await fetch(`https://${shop}/products.json?limit=50`, {
-      headers: {
-        "X-Shopify-Access-Token": session.accessToken,
-      },
-    });
-
+    const backendUrl = `${url.origin}/api/collection-products?collectionUrl=${encodeURIComponent(collectionUrl)}`;
+    const res = await fetch(backendUrl);
     const data = await res.json();
 
-    shopifyProducts =
-      data.products?.map((p) => ({
-        id: `shopify-${p.id}`,
+    if (!data.success) return { error: data.error };
+
+    const initialProducts =
+      data.products?.map((p, i) => ({
+        id: i,
         title: p.title,
-        description: p.body_html,
-        price: p.variants?.[0]?.price || "N/A",
-        image:
-          p.images?.[0]?.src ||
-          "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
-        source: "shopify",
+        image: p.image,
+        price: p.price,
+        description: p.description,
+        link: p.link,
+        Rating: p.Rating,
       })) || [];
+    // comparison products
+    const shopName = session.shop;
+    const user = await getOrCreateUser(shopName);
+
+    const Userproducts = await prisma.product.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // 🔹 Shopify products
+    let shopifyProducts = [];
+    try {
+      // ⚠️ IMPORTANT: always session.shop
+      const adminShop = session.shop;
+
+      const res = await fetch(
+        `https://${adminShop}/admin/api/2024-01/graphql.json`,
+        {
+          method: "POST",
+          headers: {
+            "X-Shopify-Access-Token": session.accessToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: `
+          {
+            products(first: 50) {
+              edges {
+                node {
+                  id
+                  title
+                  descriptionHtml
+                  images(first: 1) {
+                    edges { node { url } }
+                  }
+                  variants(first: 1) {
+                    edges { node { price } }
+                  }
+                }
+              }
+            }
+          }`,
+          }),
+        },
+      );
+
+      const text = await res.text();
+
+      // 🔒 HARD GUARD
+      if (!res.ok || text.startsWith("<")) {
+        console.warn("Shopify Admin API blocked / HTML response");
+        shopifyProducts = [];
+      } else {
+        const json = JSON.parse(text);
+
+        shopifyProducts =
+          json.data?.products?.edges?.map(({ node }) => ({
+            id: `shopify-${node.id.split("/").pop()}`,
+            title: node.title,
+            description: node.descriptionHtml || "",
+            price: node.variants.edges[0]?.node.price || "N/A",
+            image:
+              node.images.edges[0]?.node.url ||
+              "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-1_large.png",
+            source: "shopify",
+          })) || [];
+      }
+    } catch (e) {
+      console.error("Shopify products fetch failed safely", e);
+      shopifyProducts = [];
+    }
+    return {
+      collectionUrl,
+      initialProducts,
+      Userproducts,
+      shopifyProducts,
+      shopName,
+    };
   } catch (error) {
-    console.log("Shopify fetch failed", error);
+    return {
+      fallback: true,
+      reason: "security_blocked",
+      collectionUrl,
+    };
   }
-  return { collectionUrl, initialProducts, Userproducts, shopifyProducts };
 };
 
 export default function CollectionProducts() {
@@ -72,25 +127,21 @@ export default function CollectionProducts() {
     initialProducts,
     Userproducts,
     shopifyProducts,
+    shopName,
+    fallback,
+    reason,
   } = useLoaderData();
   const [products, setProducts] = useState(initialProducts || []);
   const [loading, setLoading] = useState(false);
   const [showCompareModal, setshowCompareModal] = useState(false);
   const [selectedScraped, setselectedScrap] = useState(null);
+  const [reported, setReported] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     document.title = "Collection Products";
   }, []);
 
-  if (error)
-    return (
-      <s-page title="Error ⚠️">
-        <s-card padding="loose">
-          <s-text>{error}</s-text>
-        </s-card>
-      </s-page>
-    );
   const cardStyle = {
     position: "relative",
     display: "flex",
@@ -103,120 +154,190 @@ export default function CollectionProducts() {
     transition: "all 0.2s ease",
     background: "#fff",
   };
+  const handleReport = async () => {
+    try {
+      const res = await fetch("/api/report-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopName }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReported(true);
+      }
+      if (!res.ok) {
+      console.error("Report failed:", data);
+      return;
+    }
+    } catch (error) {
+      console.error("Error in reporting the store", error);
+    }
+  };
   return (
     <s-page title="🛍️ Collection Products">
-      <s-layout>
-        <s-layout-section>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-              gap: "1.5rem",
-              marginTop: "1rem",
-            }}
-          >
-            {products.map((p) => (
-              <s-card
-                key={p.id}
-                padding="none"
-                borderRadius="large"
-                shadow="base"
+      {fallback ? (
+        <s-card padding="loose" tone="critical">
+          <s-text variant="headingSm">
+            ⚠️ Unable to display products from this collection
+          </s-text>
+
+          <s-text tone="subdued" style={{ marginTop: "0.5rem" }}>
+            This website does not allow external access to its product or SEO
+            data due to security restrictions.
+          </s-text>
+
+          {collectionUrl && (
+            <s-text tone="subdued" style={{ marginTop: "0.5rem" }}>
+              Collection URL: <strong>{collectionUrl}</strong>
+            </s-text>
+          )}
+
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
+            <s-button
+              variant="primary"
+              onClick={handleReport}
+              disabled={reported}
+            >
+              {reported ? "✅ Notified" : "Notify developer"}
+            </s-button>
+            {reported && (
+              <s-text tone="success" style={{ marginTop: "0.5rem" }}>
+                Thanks! We'll try to support this store soon.
+              </s-text>
+            )}
+            <s-button variant="secondary" onClick={() => navigate(-1)}>
+              Go back
+            </s-button>
+          </div>
+
+          <s-text tone="subdued" style={{ marginTop: "0.5rem" }}>
+            We’ll try to support this store in future updates.
+          </s-text>
+        </s-card>
+      ) : (
+        <>
+          <s-layout>
+            <s-layout-section>
+              <div
                 style={{
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                  gap: "1.5rem",
+                  marginTop: "1rem",
                 }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.transform = "scale(1.02)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.transform = "scale(1)")
-                }
               >
-                {/* Product Image */}
-                <div
-                  style={{ width: "100%", height: "200px", overflow: "hidden" }}
-                >
-                  <img
-                    src={p.image}
-                    alt={p.title}
+                {products.map((p) => (
+                  <s-card
+                    key={p.id}
+                    padding="none"
+                    borderRadius="large"
+                    shadow="base"
                     style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      display: "block",
+                      overflow: "hidden",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      transition: "transform 0.2s ease, box-shadow 0.2s ease",
                     }}
-                  />
-                </div>
-
-                {/* Product Info */}
-                <div style={{ padding: "1rem" }}>
-                  <s-text variant="headingSm" truncate>
-                    Title:{p.title}
-                  </s-text>
-
-                  <div style={{ margin: "0.5rem 0" }}>
-                    {p.price && (
-                      <s-text variant="bodyMd" tone="subdued">
-                        💰Price: <strong>{p.price}</strong>
-                      </s-text>
-                    )}
-                    {p.Rating && (
-                      <s-text
-                        variant="bodyMd"
-                        tone="subdued"
-                        style={{ display: "block" }}
-                      >
-                        🌟 Rating: {p.Rating}
-                      </s-text>
-                    )}
-                  </div>
-
-                  {p.description && (
-                    <s-text
-                      as="p"
-                      variant="bodySm"
-                      tone="subdued"
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.transform = "scale(1.02)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.transform = "scale(1)")
+                    }
+                  >
+                    {/* Product Image */}
+                    <div
                       style={{
-                        marginTop: "0.5rem",
-                        lineHeight: "1.4",
+                        width: "100%",
+                        height: "200px",
+                        overflow: "hidden",
                       }}
                     >
-                      Description:
-                      <strong>
-                        {p.description.length > 100
-                          ? `${p.description.slice(0, 100)}...`
-                          : p.description}
-                      </strong>
-                    </s-text>
-                  )}
-                </div>
+                      <img
+                        src={p.image}
+                        alt={p.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          display: "block",
+                        }}
+                      />
+                    </div>
 
-                {/* Product Link */}
-                <div style={{ padding: "0 1rem 1rem" }}>
-                  <a href={p.link} target="_blank" rel="noopener noreferrer">
-                    <s-button size="slim" fullWidth variant="secondary">
-                      View Product →
-                    </s-button>
-                  </a>
-                  <s-button
-                    size="slim"
-                    variant="primary"
-                    onClick={() => {
-                      setselectedScrap(p);
-                      setshowCompareModal(true);
-                    }}
-                  >
-                    Compare
-                  </s-button>
-                </div>
-              </s-card>
-            ))}
-          </div>
-        </s-layout-section>
-      </s-layout>
+                    {/* Product Info */}
+                    <div style={{ padding: "1rem" }}>
+                      <s-text variant="headingSm" truncate>
+                        Title:{p.title}
+                      </s-text>
+
+                      <div style={{ margin: "0.5rem 0" }}>
+                        {p.price && (
+                          <s-text variant="bodyMd" tone="subdued">
+                            💰Price: <strong>{p.price}</strong>
+                          </s-text>
+                        )}
+                        {p.Rating && (
+                          <s-text
+                            variant="bodyMd"
+                            tone="subdued"
+                            style={{ display: "block" }}
+                          >
+                            🌟 Rating: {p.Rating}
+                          </s-text>
+                        )}
+                      </div>
+
+                      {p.description && (
+                        <s-text
+                          as="p"
+                          variant="bodySm"
+                          tone="subdued"
+                          style={{
+                            marginTop: "0.5rem",
+                            lineHeight: "1.4",
+                          }}
+                        >
+                          Description:
+                          <strong>
+                            {p.description.length > 100
+                              ? `${p.description.slice(0, 100)}...`
+                              : p.description}
+                          </strong>
+                        </s-text>
+                      )}
+                    </div>
+
+                    {/* Product Link */}
+                    <div style={{ padding: "0 1rem 1rem" }}>
+                      <a
+                        href={p.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <s-button size="slim" fullWidth variant="secondary">
+                          View Product →
+                        </s-button>
+                      </a>
+                      <s-button
+                        size="slim"
+                        variant="primary"
+                        onClick={() => {
+                          setselectedScrap(p);
+                          setshowCompareModal(true);
+                        }}
+                      >
+                        Compare
+                      </s-button>
+                    </div>
+                  </s-card>
+                ))}
+              </div>
+            </s-layout-section>
+          </s-layout>
+        </>
+      )}
 
       {loading && (
         <div style={{ textAlign: "center", marginTop: "1rem" }}>
@@ -258,14 +379,14 @@ export default function CollectionProducts() {
                   borderRadius: "12px",
                   marginBottom: "16px",
                   color: "white",
-                  textAlign:'center'
+                  textAlign: "center",
                 }}
               >
                 Select your product to compare
               </div>
               {/* Manual product */}
               {Userproducts.length > 0 && (
-                <> 
+                <>
                   <div
                     style={{
                       display: "grid",
@@ -289,7 +410,7 @@ export default function CollectionProducts() {
                           }
                           onClick={() =>
                             navigate(
-                              `/compare-product?user=${up.id}&type=manual&scraped=${encodeURIComponent(
+                              `/compare-product?shop=${shop}&user=${up.id}&type=manual&scraped=${encodeURIComponent(
                                 selectedScraped.title || "",
                               )}`,
                             )
@@ -382,7 +503,7 @@ export default function CollectionProducts() {
                     }
                     onClick={() =>
                       navigate(
-                        `/compare-product?shopify=${sp.id}&type=shopify&scraped=${encodeURIComponent(
+                        `/compare-product?shop=${shop}&shopify=${sp.id}&type=shopify&scraped=${encodeURIComponent(
                           selectedScraped?.title || "",
                         )}`,
                       )
