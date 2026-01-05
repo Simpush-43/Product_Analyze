@@ -34,8 +34,8 @@ export const loader = async ({ request, params }) => {
         Rating: p.Rating,
       })) || [];
     // comparison products
-    const shopName = session.shop;
-    const user = await getOrCreateUser(shopName);
+    const shop = session.shop;
+    const user = await getOrCreateUser(shop);
 
     const Userproducts = await prisma.product.findMany({
       where: { userId: user.id },
@@ -109,7 +109,7 @@ export const loader = async ({ request, params }) => {
       initialProducts,
       Userproducts,
       shopifyProducts,
-      shopName,
+      shop,
     };
   } catch (error) {
     return {
@@ -127,7 +127,7 @@ export default function CollectionProducts() {
     initialProducts,
     Userproducts,
     shopifyProducts,
-    shopName,
+    shop,
     fallback,
     reason,
   } = useLoaderData();
@@ -161,14 +161,9 @@ export default function CollectionProducts() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shopName }),
       });
-      const data = await res.json();
       if (res.ok) {
         setReported(true);
       }
-      if (!res.ok) {
-      console.error("Report failed:", data);
-      return;
-    }
     } catch (error) {
       console.error("Error in reporting the store", error);
     }
